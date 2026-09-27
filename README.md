@@ -59,7 +59,7 @@ branch that exists in every plug-in repo.
    runner with the apps ticked, runs `codesign --verify` and `auval` on everything, runs
    the uninstaller and checks that nothing is left behind.
 
-**Required secret:** `ONGA_REPOS_TOKEN`. The plug-in repos are private, so this needs to
+**Required secret:** `ONGA_REPOS_TOKEN` (or `ONGA_SYNC`). The plug-in repos are private, so this needs to
 be a fine-grained personal access token with *Contents: read* on the five plug-in repos.
 
 ## Signing and notarisation (off for now)

@@ -39,15 +39,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The plug-in repos are private: ONGA_REPOS_TOKEN is a fine-grained token with
-      # read access to their contents.
+      # The plug-in repos are private: ONGA_REPOS_TOKEN (or ONGA_SYNC) is a token with
+      # read access to their contents (a classic token with the repo scope works).
       - uses: actions/checkout@v4
         with:
           repository: ${{ matrix.repo }}
           ref: ${{ inputs.ref_override || matrix.tag }}
           path: src
           submodules: recursive
-          token: ${{ secrets.ONGA_REPOS_TOKEN || github.token }}
+          token: ${{ secrets.ONGA_REPOS_TOKEN || secrets.ONGA_SYNC || github.token }}
 
       - name: Build universal bundles
         run: ./scripts/build_plugin.sh ${{ matrix.plugin }} src bundles
