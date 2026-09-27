@@ -14,6 +14,11 @@ on:
         description: 'Testing only: build every plug-in from this branch or tag instead of its pinned tag'
         required: false
         default: ''
+      test_release:
+        description: 'Testing only: publish this build as a pre-release (tag test-<run number>)'
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: write
@@ -160,3 +165,17 @@ jobs:
           cp "dist/Install ONGA Sync.pkg" "dist/ONGA-Sync-$VERSION.pkg"
           gh release create "$GITHUB_REF_NAME" "dist/ONGA-Sync-$VERSION.dmg" "dist/ONGA-Sync-$VERSION.pkg" \
             --title "ONGA Sync $VERSION" --notes "$notes" --target "$GITHUB_SHA"
+
+      - name: Publish test pre-release
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          tag="test-${GITHUB_RUN_NUMBER}"
+          notes="Test build of ONGA Sync $VERSION from ${{ inputs.ref_override || 'the pinned tags' }}. Not a release."$'\n\n'
+          for d in bundles/*/; do p=$(basename "$d"); notes+="- $p $(cat "$d/VERSION")"$'\n'; done
+          notes+=$'\n'"Open the DMG and double-click Install ONGA Sync.pkg. It is unsigned: right-click it and choose Open the first time."
+          gh release create "$tag" "dist/ONGA-Sync-$VERSION.dmg" \
+            --title "ONGA Sync $VERSION (test build $GITHUB_RUN_NUMBER)" --notes "$notes" \
+            --prerelease --target "$GITHUB_SHA"
