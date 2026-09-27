@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       ref_override:
-        description: 'Testing only: build every plug-in from this branch or tag instead of its pinned ref'
+        description: 'Testing only: build every tagged plug-in from this branch or tag (commit-pinned ones stay put)'
         required: false
         default: ''
       test_release:
@@ -52,7 +52,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ${{ matrix.repo }}
-          ref: ${{ inputs.ref_override || matrix.tag }}
+          ref: ${{ (inputs.ref_override != '' && !matrix.commit) && inputs.ref_override || matrix.tag }}
           path: src
           submodules: recursive
           token: ${{ secrets.ONGA_REPOS_TOKEN || secrets.ONGA_SYNC || github.token }}
