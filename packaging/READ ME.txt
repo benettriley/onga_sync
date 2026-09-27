@@ -1,0 +1,31 @@
+ONGA SYNC  -  the ONGA plug-in suite  -  @VERSION@
+==================================================
+
+INSTALL
+  1. Quit your DAW.
+  2. Double-click "Install ONGA Sync.pkg".
+  3. Tick the plug-ins you want (all are ticked by default), and the standalone
+     apps if you want them. Enter your Mac password when asked.
+  4. Open your DAW. Everything is listed under the maker "ONGA".
+
+  If macOS says the installer "can't be opened because it is from an
+  unidentified developer": right-click (or Control-click) the .pkg, choose
+  Open, then Open again. You only need to do this once.
+
+  Older copies under earlier names are moved to the Trash so each plug-in is
+  listed once. Sessions saved with them still open.
+
+WHAT'S INSIDE
+@PLUGIN_LINES@
+
+  Audio Unit  /Library/Audio/Plug-Ins/Components
+  VST3        /Library/Audio/Plug-Ins/VST3
+  Apps        /Applications (optional)
+
+  Apple Silicon and Intel, macOS 11 or newer.
+
+UNINSTALL
+  Double-click "Uninstall ONGA Sync.pkg". Every ONGA plug-in and app is moved
+  to your Trash; nothing else is touched.
+
+ongatools.com

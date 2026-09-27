@@ -1,0 +1,162 @@
+name: ONGA Sync
+
+# Every push builds the suite installer from the pinned tags in suite.sh, installs it on
+# the runner, validates every Audio Unit, uninstalls it, and uploads the DMG.
+# Pushing a tag "v<SUITE_VERSION>" also publishes a GitHub Release.
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      ref_override:
+        description: 'Testing only: build every plug-in from this branch or tag instead of its pinned tag'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: plan
+        run: ./scripts/plan.sh >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: build ${{ matrix.plugin }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The plug-in repos are private: ONGA_REPOS_TOKEN is a fine-grained token with
+      # read access to their contents.
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repo }}
+          ref: ${{ inputs.ref_override || matrix.tag }}
+          path: src
+          submodules: recursive
+          token: ${{ secrets.ONGA_REPOS_TOKEN || github.token }}
+
+      - name: Build universal bundles
+        run: ./scripts/build_plugin.sh ${{ matrix.plugin }} src bundles
+
+      # Artifacts drop file permissions, so the bundles travel as a tarball.
+      - name: Pack
+        run: tar -C bundles -czf bundles-${{ matrix.plugin }}.tgz ${{ matrix.plugin }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundles-${{ matrix.plugin }}
+          path: bundles-${{ matrix.plugin }}.tgz
+          if-no-files-found: error
+
+  assemble:
+    needs: [plan, build]
+    runs-on: macos-14
+    env:
+      MACOS_CERTS_P12: ${{ secrets.MACOS_CERTS_P12 }}   # job-level so step `if:`s can see it
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bundles-*
+          merge-multiple: true
+          path: packed
+
+      - name: Unpack
+        run: |
+          mkdir -p bundles
+          for t in packed/*.tgz; do tar -C bundles -xzf "$t"; done
+          ls -R bundles | head -50
+
+      # Off until there's a Developer ID. Add the secrets and nothing else changes.
+      - name: Import signing certificates
+        if: ${{ env.MACOS_CERTS_P12 != '' }}
+        env:
+          MACOS_CERTS_PASSWORD: ${{ secrets.MACOS_CERTS_PASSWORD }}
+        run: |
+          echo "$MACOS_CERTS_P12" | base64 --decode > certs.p12
+          security create-keychain -p ci build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p ci build.keychain
+          security import certs.p12 -k build.keychain -P "$MACOS_CERTS_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
+          rm certs.p12
+
+      - name: Assemble installer
+        env:
+          ONGA_SIGN_IDENTITY: ${{ secrets.APP_SIGN_IDENTITY }}
+          ONGA_INSTALLER_IDENTITY: ${{ secrets.INSTALLER_SIGN_IDENTITY }}
+          ONGA_NOTARIZE: ${{ secrets.NOTARY_APPLE_ID != '' && '1' || '0' }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+        run: ./scripts/assemble.sh bundles dist
+
+      - name: Install everything (apps ticked) and validate
+        run: |
+          . ./suite.sh
+          cat > choices.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><array><dict>
+            <key>choiceIdentifier</key><string>apps</string>
+            <key>choiceAttribute</key><string>selected</string>
+            <key>attributeSetting</key><integer>1</integer>
+          </dict></array></plist>
+          PLIST
+          sudo installer -pkg "dist/Install ONGA Sync.pkg" -applyChoiceChangesXML choices.plist -target / -verbose
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          for p in "${PLUGINS[@]}"; do
+            load_plugin "$p"
+            paths=("/Library/Audio/Plug-Ins/Components/$p.component" "/Library/Audio/Plug-Ins/VST3/$p.vst3")
+            [[ "$APP" == 1 ]] && paths+=("/Applications/$p.app")
+            for path in "${paths[@]}"; do
+              test -d "$path" || { echo "::error::installer did not create $path"; exit 1; }
+              codesign --verify --strict "$path"
+            done
+            auval -v "${AUVAL[@]}" > "auval-$p.txt" || { tail -40 "auval-$p.txt"; echo "::error::auval failed for $p"; exit 1; }
+            echo "auval ok: $p"
+          done
+
+      - name: Uninstall cleanly
+        run: |
+          . ./suite.sh
+          sudo installer -pkg "dist/Uninstall ONGA Sync.pkg" -target /
+          for p in "${PLUGINS[@]}"; do
+            for path in "/Library/Audio/Plug-Ins/Components/$p.component" "/Library/Audio/Plug-Ins/VST3/$p.vst3" "/Applications/$p.app"; do
+              test ! -e "$path" || { echo "::error::uninstall left $path behind"; exit 1; }
+            done
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ONGA-Sync-${{ needs.plan.outputs.version }}
+          path: dist/*
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          [[ "$GITHUB_REF_NAME" == "v$VERSION" ]] || { echo "::error::tag $GITHUB_REF_NAME does not match SUITE_VERSION $VERSION in suite.sh"; exit 1; }
+          notes="ONGA Sync $VERSION: every ONGA plug-in in one installer (Apple Silicon + Intel, macOS 11+)."$'\n\n'
+          for d in bundles/*/; do p=$(basename "$d"); notes+="- $p $(cat "$d/VERSION")"$'\n'; done
+          notes+=$'\n'"Open the DMG and double-click Install ONGA Sync.pkg. Until the installer is notarised, right-click it and choose Open the first time."
+          cp "dist/Install ONGA Sync.pkg" "dist/ONGA-Sync-$VERSION.pkg"
+          gh release create "$GITHUB_REF_NAME" "dist/ONGA-Sync-$VERSION.dmg" "dist/ONGA-Sync-$VERSION.pkg" \
+            --title "ONGA Sync $VERSION" --notes "$notes" --target "$GITHUB_SHA"

@@ -1,0 +1,51 @@
+#!/bin/sh
+# "Uninstall ONGA Sync.pkg": moves every ONGA plug-in and app this suite (or any earlier
+# per-plug-in installer) put on the Mac to the Trash. Nothing is permanently deleted.
+# assemble.sh puts a "names" file next to this script:
+#   NAMES     every bundle name, current and old, one per line
+#   RECEIPTS  every receipt to forget, one per line
+set -u
+set -f
+. "$(dirname "$0")/names" || exit 0
+
+console_user=$(stat -f '%Su' /dev/console 2>/dev/null || true)
+home=
+case "$console_user" in ''|root|loginwindow|_mbsetupuser) ;; *)
+  home=$(dscl . -read "/Users/$console_user" NFSHomeDirectory 2>/dev/null | awk '{ print $2 }') ;;
+esac
+[ -n "$home" ] && [ -d "$home" ] || home=
+
+stamp=$(date '+%Y-%m-%d %H%M%S')
+if [ -n "$home" ]; then
+  trash="$home/.Trash/ONGA uninstalled $stamp"
+else
+  trash="/Users/Shared/ONGA uninstalled $stamp"
+fi
+
+# On case-insensitive APFS, "voxmaster" and "Voxmaster" are one path: whichever comes
+# first is moved and the other test then finds nothing.
+to_trash() {
+  if [ -e "$1" ]; then
+    mkdir -p "$trash/$2" && mv "$1" "$trash/$2/" && echo "moved $1 to the Trash"
+  fi
+}
+
+nl='
+'
+IFS=$nl
+for n in $NAMES; do
+  to_trash "/Library/Audio/Plug-Ins/Components/$n.component" system
+  to_trash "/Library/Audio/Plug-Ins/VST3/$n.vst3" system
+  to_trash "/Applications/$n.app" system
+  if [ -n "$home" ]; then
+    to_trash "$home/Library/Audio/Plug-Ins/Components/$n.component" user
+    to_trash "$home/Library/Audio/Plug-Ins/VST3/$n.vst3" user
+  fi
+done
+[ -n "$home" ] && [ -d "$trash" ] && chown -R "$console_user" "$trash"
+
+for receipt in $RECEIPTS; do
+  pkgutil --forget "$receipt" >/dev/null 2>&1 || true
+done
+killall -9 AudioComponentRegistrar >/dev/null 2>&1 || true
+exit 0

@@ -1,0 +1,73 @@
+#!/bin/sh
+# Runs as root before one part of the ONGA Sync installer lands (one plug-in's AU + VST3,
+# or one standalone app). assemble.sh puts a "target" file next to this script:
+#   KIND      plugin | app
+#   NAME      the current bundle name, e.g. bloom
+#   OLD_NAMES earlier bundle names, one per line
+#   RECEIPTS  earlier installer receipts, one per line
+#
+# Moves older copies to the Trash so hosts don't list a plug-in twice:
+#  - bundles under an old name, system-wide and in the console user's home. The plug-in
+#    codes never change, so sessions saved with an old name still open, and
+#  - per-user copies of the current name, left by source builds.
+# Nothing is deleted: a failed install can be undone from the Trash.
+set -u
+set -f   # names are matched literally, never globbed
+
+[ "${3:-/}" = "/" ] || exit 0
+. "$(dirname "$0")/target" || exit 0
+
+console_user=$(stat -f '%Su' /dev/console 2>/dev/null || true)
+home=
+case "$console_user" in ''|root|loginwindow|_mbsetupuser) ;; *)
+  home=$(dscl . -read "/Users/$console_user" NFSHomeDirectory 2>/dev/null | awk '{ print $2 }') ;;
+esac
+[ -n "$home" ] && [ -d "$home" ] || home=
+
+stamp=$(date '+%Y-%m-%d %H%M%S')
+if [ -n "$home" ]; then
+  trash="$home/.Trash/ONGA old copies $stamp"
+else
+  trash="/Users/Shared/ONGA old copies $stamp"
+fi
+
+# APFS ignores case by default, so "-e Voxmaster.vst3" is also true for voxmaster.vst3.
+# A system-wide bundle only counts as old when its name on disk is exactly the old one.
+named_exactly() {
+  [ -e "$1" ] && ls -1 "$(dirname "$1")" 2>/dev/null | grep -qxF "$(basename "$1")"
+}
+
+# $2 keeps system-wide and per-user copies of the same name apart in the Trash.
+to_trash() {
+  mkdir -p "$trash/$2" && mv "$1" "$trash/$2/" && echo "moved $1 to the Trash"
+}
+
+nl='
+'
+IFS=$nl
+
+if [ "$KIND" = plugin ]; then
+  for pair in "VST3 vst3" "Components component"; do
+    dir=${pair% *}; ext=${pair#* }
+    for old in $OLD_NAMES; do
+      named_exactly "/Library/Audio/Plug-Ins/$dir/$old.$ext" && to_trash "/Library/Audio/Plug-Ins/$dir/$old.$ext" system
+    done
+    if [ -n "$home" ]; then
+      for n in $OLD_NAMES $NAME; do
+        [ -e "$home/Library/Audio/Plug-Ins/$dir/$n.$ext" ] && to_trash "$home/Library/Audio/Plug-Ins/$dir/$n.$ext" user
+      done
+    fi
+  done
+else
+  for old in $OLD_NAMES; do
+    named_exactly "/Applications/$old.app" && to_trash "/Applications/$old.app" system
+    [ -n "$home" ] && named_exactly "$home/Applications/$old.app" && to_trash "$home/Applications/$old.app" user
+  done
+fi
+
+[ -n "$home" ] && [ -d "$trash" ] && chown -R "$console_user" "$trash"
+
+for receipt in $RECEIPTS; do
+  pkgutil --forget "$receipt" >/dev/null 2>&1 || true
+done
+exit 0

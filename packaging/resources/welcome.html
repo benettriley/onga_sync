@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  html, body { background: #C2BDB1; }
+  body { font-family: "Space Mono", Menlo, monospace; color: #141413; margin: 0; padding: 10px 14px; }
+  .logo { display: inline-block; background: #141413; color: #F4F2EC; padding: 10px 16px;
+          letter-spacing: 0.32em; font-size: 20px; font-weight: bold; border-bottom: 4px solid #D9432B; }
+  .model { color: #5A5852; letter-spacing: 0.3em; font-size: 10px; margin: 10px 0 16px; text-transform: uppercase; }
+  p, li { font-size: 12px; line-height: 1.55; }
+  table { border-collapse: collapse; margin: 6px 0 12px; }
+  td { font-size: 12px; padding: 3px 14px 3px 0; vertical-align: top; }
+  td.name { font-weight: bold; }
+  td.ver { color: #5A5852; }
+  code { font-family: Menlo, monospace; font-size: 11px; }
+  .rule { border-top: 1px solid #141413; margin: 12px 0; }
+</style></head><body>
+  <div class="logo">ONGA SYNC</div>
+  <div class="model">The ONGA suite &middot; @VERSION@</div>
+  <p>One installer for every ONGA plug-in. Pick what you want on the next page.</p>
+  <table>
+@PLUGIN_ROWS@
+  </table>
+  <div class="rule"></div>
+  <p>Audio Units go to <code>/Library/Audio/Plug-Ins/Components</code>, VST3 to
+     <code>/Library/Audio/Plug-Ins/VST3</code>, and the optional standalone apps to
+     <code>/Applications</code>. Apple Silicon and Intel, macOS 11 or newer.</p>
+  <p>Older copies under earlier names (ONGA BLOOM, magEQ, PANNAVISIO&hellip;) are moved to the
+     Trash so your DAW lists each plug-in once. Sessions saved with them open as before.</p>
+  <p><b>Quit your DAW before continuing.</b></p>
+</body></html>

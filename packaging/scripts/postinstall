@@ -1,0 +1,18 @@
+#!/bin/sh
+# Runs after one part of the ONGA Sync installer lands.
+#  1. Strips the download quarantine flag: a quarantined plug-in is one Logic silently
+#     refuses to load.
+#  2. For plug-ins, restarts the Audio Unit registrar so Logic and GarageBand see the
+#     new AU without a reboot.
+set -u
+. "$(dirname "$0")/target" || exit 0
+
+if [ "$KIND" = plugin ]; then
+  for b in "/Library/Audio/Plug-Ins/Components/$NAME.component" "/Library/Audio/Plug-Ins/VST3/$NAME.vst3"; do
+    [ -e "$b" ] && xattr -dr com.apple.quarantine "$b" 2>/dev/null
+  done
+  killall -9 AudioComponentRegistrar >/dev/null 2>&1 || true
+else
+  [ -e "/Applications/$NAME.app" ] && xattr -dr com.apple.quarantine "/Applications/$NAME.app" 2>/dev/null
+fi
+exit 0
