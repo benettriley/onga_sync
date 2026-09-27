@@ -54,7 +54,9 @@ component_pkg() {  # <root> <identifier> <version> <scripts-dir> <out.pkg>
     local plist="$WORK/$(basename "$5" .pkg).plist" i=0
     pkgbuild --analyze --root "$1" "$plist" >/dev/null
     while /usr/libexec/PlistBuddy -c "Print :$i" "$plist" >/dev/null 2>&1; do
-        /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" "$plist"
+        # The key only exists for app bundles; plug-in bundles need it added.
+        /usr/libexec/PlistBuddy -c "Set :$i:BundleIsRelocatable false" "$plist" >/dev/null 2>&1 \
+            || /usr/libexec/PlistBuddy -c "Add :$i:BundleIsRelocatable bool false" "$plist"
         i=$((i + 1))
     done
     (( i > 0 )) || { echo "error: pkgbuild found no bundles under $1" >&2; exit 1; }
