@@ -1,0 +1,3 @@
+[submodule "onga-ui"]
+	path = onga-ui
+	url = https://github.com/benettriley/onga_v1_UI.git
