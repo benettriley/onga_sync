@@ -59,11 +59,20 @@ juce::String uninstallScript (const Package& p, const UserContext& user, const j
     return s;
 }
 
+juce::File writeScript (const juce::String& script)
+{
+    auto file = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("onga-sync", ".sh");
+    // replaceWithText defaults to "\r\n", which sh reads as part of each command.
+    if (! file.replaceWithText (script, false, false, "\n"))
+        return {};
+    return file;
+}
+
 juce::Result runAsAdmin (const juce::String& script, juce::String& output)
 {
    #if JUCE_MAC
-    auto file = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("onga-sync", ".sh");
-    if (! file.replaceWithText (script))
+    const auto file = writeScript (script);
+    if (file == juce::File())
         return juce::Result::fail ("Couldn't write a temporary script.");
 
     // The path goes in as an argument, so nothing in it is ever parsed as AppleScript.

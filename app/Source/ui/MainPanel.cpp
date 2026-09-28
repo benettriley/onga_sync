@@ -229,9 +229,19 @@ void MainPanel::editSource()
 
 void MainPanel::showNotice (const juce::String& text, bool isError)
 {
-    notice = text;
+    notice = isError ? text.upToFirstOccurrenceOf ("\n", false, false) : text;
     noticeIsError = isError;
     repaint();
+
+    // The status line only fits a sentence; show the whole error too.
+    if (isError)
+        juce::AlertWindow::showAsync (juce::MessageBoxOptions()
+                                          .withIconType (juce::MessageBoxIconType::NoIcon)
+                                          .withTitle ("SOMETHING WENT WRONG")
+                                          .withMessage (text)
+                                          .withButton ("OK")
+                                          .withAssociatedComponent (this),
+                                      nullptr);
 }
 
 //==============================================================================

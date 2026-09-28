@@ -6,7 +6,7 @@
 # publishes a GitHub Release. The app picks the new catalog up on its next check.
 
 SUITE_NAME="ONGA Sync"
-SUITE_VERSION="2026.1"
+SUITE_VERSION="2026.2"
 SUITE_ID="com.ongatools.sync"
 
 # Order here is the order of the library in the app and of the offline installer's checkboxes.

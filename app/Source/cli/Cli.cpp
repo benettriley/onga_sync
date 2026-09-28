@@ -6,8 +6,8 @@
                                                            what's installed vs the catalog
         OngaSyncCli verify <catalog.json>                download every package through
                                                            the app's downloader + checksum
-        OngaSyncCli install-script <pkg>...              the script the app runs as root
-        OngaSyncCli uninstall-script <catalog.json> <id>
+        OngaSyncCli install-script <pkg>...              writes the script the app runs as root,
+        OngaSyncCli uninstall-script <catalog.json> <id>   through the app's own writer; prints its path
 */
 #include "../core/Account.h"
 #include "../core/Catalog.h"
@@ -160,6 +160,13 @@ int runTests()
     expect (s.userCopies, "per-user copy noticed");
 
     std::cout << "scripts" << std::endl;
+    {
+        const auto f = writeScript (installScript ({ juce::File ("/tmp/a.pkg") }));
+        juce::MemoryBlock bytes;
+        f.loadFileAsData (bytes);
+        expect (f.existsAsFile() && ! bytes.toString().containsChar ('\r'), "script file has Unix line endings");
+        f.deleteFile();
+    }
     expect (shellQuote ("it's") == "'it'\\''s'", "shell quoting");
     const auto inst = installScript ({ juce::File ("/tmp/a b.pkg") });
     expect (inst.contains ("installer -pkg '/tmp/a b.pkg' -target /"), "install script quotes paths");
@@ -224,7 +231,9 @@ int main (int argc, char* argv[])
         juce::Array<juce::File> pkgs;
         for (int i = 1; i < args.size(); ++i)
             pkgs.add (juce::File::getCurrentWorkingDirectory().getChildFile (args[i]));
-        std::cout << installScript (pkgs);
+        const auto f = writeScript (installScript (pkgs));
+        if (f == juce::File()) return fail ("couldn't write the script");
+        std::cout << f.getFullPathName() << std::endl;
         return 0;
     }
 
@@ -242,7 +251,9 @@ int main (int argc, char* argv[])
         auto* p = cat.find (args[2]);
         if (p == nullptr)
             return fail ("no package '" + args[2] + "' in the catalog");
-        std::cout << uninstallScript (*p, invokingUser(), juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H%M%S"));
+        const auto f = writeScript (uninstallScript (*p, invokingUser(), juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H%M%S")));
+        if (f == juce::File()) return fail ("couldn't write the script");
+        std::cout << f.getFullPathName() << std::endl;
         return 0;
     }
 
