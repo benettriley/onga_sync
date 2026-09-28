@@ -15,7 +15,7 @@ packages each one, and publishes them with a `catalog.json` the app reads.
 | voxmaster | `benettriley/voxmaster` | effect | AU, VST3, app |
 | mageq | `benettriley/mageq_onga` | effect | AU, VST3, app |
 | panna | `benettriley/panna` | effect | AU, VST3, app |
-| The Wizard | `benettriley/TheWiz` | instrument | AU, VST3, app |
+| the wizard | `benettriley/TheWiz` | instrument | AU, VST3, app |
 
 ## The app
 
@@ -55,7 +55,7 @@ Settings and the session live in `~/Library/Application Support/ONGA/Sync`.
 { "schema": 1, "suite": "2026.1",
   "sync": { "version": "0.1.0", "url": "ONGA-Sync-0.1.0.pkg", "sha256": "…", "size": 123 },
   "packages": [
-    { "id": "wizard", "name": "The Wizard", "bundle": "The Wizard", "version": "1.1.6",
+    { "id": "wizard", "name": "the wizard", "bundle": "the wizard", "version": "1.1.6",
       "type": "instrument", "blurb": "…",
       "plugin": { "url": "wizard-1.1.6.pkg", "sha256": "…", "size": 123 },
       "app": { "url": "wizard-app-1.1.6.pkg", "sha256": "…", "size": 123 },

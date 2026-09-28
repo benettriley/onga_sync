@@ -74,15 +74,16 @@ plugin_panna() {
     OLD_RECEIPTS=(com.onga.pannavisio.install com.onga.pannavisio.uninstall)
 }
 
-# TheWiz has no release tags yet, so it is pinned to a commit (its 1.1.6).
 plugin_wizard() {
-    REPO=benettriley/TheWiz; TAG=1d7e3fcb57b5f138a33538e418425dc8f9f90019; TARGET=TheWizard; APP=1
-    BUNDLE="The Wizard"; TYPE=instrument
+    REPO=benettriley/TheWiz; TAG=v1.1.6; TARGET=TheWizard; APP=1
+    BUNDLE="the wizard"; TYPE=instrument
     CMAKE_ARGS=(-DWIZARD_BUILD_TESTS=OFF -DWIZARD_BUILD_PROBE=OFF -DWIZARD_COPY_AFTER_BUILD=OFF)
     AUVAL=(aumu OWz5 Onga)
     BLURB="Five-voice analog polysynth with an arpeggiator, a four-slot effect station and 178 patches."
-    OLD_NAMES=()
-    OLD_RECEIPTS=(com.ongatools.thewizard.au com.ongatools.thewizard.vst3 com.ongatools.thewizard.app)
+    OLD_NAMES=("The Wizard")
+    OLD_RECEIPTS=(com.ongatools.thewizard.au com.ongatools.thewizard.vst3 com.ongatools.thewizard.app
+                  com.ongatools.thewizard.install.au com.ongatools.thewizard.install.vst3
+                  com.ongatools.thewizard.install.app)
 }
 
 # Clears the per-plugin variables, then loads one plug-in's.
