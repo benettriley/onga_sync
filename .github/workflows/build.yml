@@ -216,10 +216,18 @@ jobs:
           mkdir -p "$support"
           printf '{"catalogUrl": "%s"}' "$PWD/dist/packages/catalog.json" > "$support/settings.json"
           printf '{"userId":"developer","email":"dev@ongatools.local","displayName":"Developer","provider":"developer","licenses":[{"product":"*","kind":"developer","expires":0}]}' > "$support/account.json"
-          ONGA_SYNC_SNAPSHOT="$PWD/dist/onga-sync-library.png" timeout 60 "/Applications/ONGA Sync.app/Contents/MacOS/ONGA Sync" || true
+          # macOS has no timeout(1): run in the background, wait for the PNG, then stop it.
+          shoot() {
+            ONGA_SYNC_SNAPSHOT="$1" "/Applications/ONGA Sync.app/Contents/MacOS/ONGA Sync" &
+            local pid=$! i
+            for i in $(seq 60); do [[ -s "$1" ]] && break; sleep 1; done
+            sleep 1; kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+          }
+          mkdir -p shots
+          shoot "$PWD/shots/onga-sync-library.png"
           rm "$support/account.json"
-          ONGA_SYNC_SNAPSHOT="$PWD/dist/onga-sync-sign-in.png" timeout 60 "/Applications/ONGA Sync.app/Contents/MacOS/ONGA Sync" || true
-          ls -la dist/*.png
+          shoot "$PWD/shots/onga-sync-sign-in.png"
+          ls -la shots
 
       - name: The app's uninstall script removes each plug-in
         run: |
@@ -241,6 +249,13 @@ jobs:
         with:
           name: ONGA-Sync-${{ needs.plan.outputs.version }}
           path: dist/*
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: shots/*.png
+          if-no-files-found: warn
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
