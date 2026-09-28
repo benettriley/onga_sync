@@ -3,3 +3,6 @@ dist/
 src/
 packed/
 .DS_Store
+build/
+syncapp/
+packed-app/

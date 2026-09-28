@@ -1,7 +1,10 @@
 name: ONGA Sync
 
-# Every push builds the suite installer from the pinned tags in suite.sh, installs it on
-# the runner, validates every Audio Unit, uninstalls it, and uploads the DMG.
+# Every push builds every plug-in from its pinned ref in suite.sh, builds the ONGA Sync
+# app, assembles the release (per-plug-in packages + catalog.json + installers), then on
+# a clean macOS runner: installs the offline suite and validates every Audio Unit,
+# installs each package with the exact script the app runs, checks the app sees them as
+# current, screenshots the app, and uninstalls with the app's own uninstall scripts.
 # Pushing a tag "v<SUITE_VERSION>" also publishes a GitHub Release.
 on:
   push:
@@ -11,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       ref_override:
-        description: 'Testing only: build every plug-in from this branch or tag instead of its pinned tag'
+        description: 'Testing only: build every tagged plug-in from this branch or tag (commit-pinned ones stay put)'
         required: false
         default: ''
       test_release:
@@ -49,7 +52,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: ${{ matrix.repo }}
-          ref: ${{ inputs.ref_override || matrix.tag }}
+          ref: ${{ (inputs.ref_override != '' && !matrix.commit) && inputs.ref_override || matrix.tag }}
           path: src
           submodules: recursive
           token: ${{ secrets.ONGA_REPOS_TOKEN || secrets.ONGA_SYNC || github.token }}
@@ -67,8 +70,40 @@ jobs:
           path: bundles-${{ matrix.plugin }}.tgz
           if-no-files-found: error
 
+  app:
+    runs-on: macos-14
+    name: build ONGA Sync app
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build app and CLI (universal)
+        run: |
+          cmake -S app -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          cmake --build build --config Release --parallel "$(sysctl -n hw.ncpu)" --target OngaSync OngaSyncCli
+
+      - name: Core tests
+        run: build/OngaSyncCli_artefacts/Release/OngaSyncCli test
+
+      - name: Pack
+        run: |
+          mkdir -p out
+          ditto "build/OngaSync_artefacts/Release/ONGA Sync.app" "out/ONGA Sync.app"
+          cp build/OngaSyncCli_artefacts/Release/OngaSyncCli out/
+          sed -nE 's/^project\([^ ]+ VERSION ([0-9.]+).*/\1/p' app/CMakeLists.txt > out/VERSION
+          lipo -archs "out/ONGA Sync.app/Contents/MacOS/ONGA Sync" | grep -q arm64
+          lipo -archs "out/ONGA Sync.app/Contents/MacOS/ONGA Sync" | grep -q x86_64
+          tar -C out -czf sync-app.tgz .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sync-app
+          path: sync-app.tgz
+          if-no-files-found: error
+
   assemble:
-    needs: [plan, build]
+    needs: [plan, build, app]
     runs-on: macos-14
     env:
       MACOS_CERTS_P12: ${{ secrets.MACOS_CERTS_P12 }}   # job-level so step `if:`s can see it
@@ -81,11 +116,17 @@ jobs:
           merge-multiple: true
           path: packed
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: sync-app
+          path: packed-app
+
       - name: Unpack
         run: |
-          mkdir -p bundles
+          mkdir -p bundles syncapp
           for t in packed/*.tgz; do tar -C bundles -xzf "$t"; done
-          ls -R bundles | head -50
+          tar -C syncapp -xzf packed-app/sync-app.tgz
+          ls bundles/* syncapp
 
       # Off until there's a Developer ID. Add the secrets and nothing else changes.
       - name: Import signing certificates
@@ -101,7 +142,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k ci build.keychain
           rm certs.p12
 
-      - name: Assemble installer
+      - name: Assemble release
         env:
           ONGA_SIGN_IDENTITY: ${{ secrets.APP_SIGN_IDENTITY }}
           ONGA_INSTALLER_IDENTITY: ${{ secrets.INSTALLER_SIGN_IDENTITY }}
@@ -109,9 +150,11 @@ jobs:
           NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
           NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
           NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
-        run: ./scripts/assemble.sh bundles dist
+        run: |
+          ./scripts/assemble.sh bundles dist syncapp
+          cat dist/packages/catalog.json
 
-      - name: Install everything (apps ticked) and validate
+      - name: Offline suite installs everything (apps ticked) and every AU validates
         run: |
           . ./suite.sh
           cat > choices.plist <<'PLIST'
@@ -123,12 +166,12 @@ jobs:
             <key>attributeSetting</key><integer>1</integer>
           </dict></array></plist>
           PLIST
-          sudo installer -pkg "dist/Install ONGA Sync.pkg" -applyChoiceChangesXML choices.plist -target / -verbose
+          sudo installer -pkg "dist/Install ONGA Suite.pkg" -applyChoiceChangesXML choices.plist -target / -verbose
           killall -9 AudioComponentRegistrar 2>/dev/null || true
           for p in "${PLUGINS[@]}"; do
             load_plugin "$p"
-            paths=("/Library/Audio/Plug-Ins/Components/$p.component" "/Library/Audio/Plug-Ins/VST3/$p.vst3")
-            [[ "$APP" == 1 ]] && paths+=("/Applications/$p.app")
+            paths=("/Library/Audio/Plug-Ins/Components/$BUNDLE.component" "/Library/Audio/Plug-Ins/VST3/$BUNDLE.vst3")
+            [[ "$APP" == 1 ]] && paths+=("/Applications/$BUNDLE.app")
             for path in "${paths[@]}"; do
               test -d "$path" || { echo "::error::installer did not create $path"; exit 1; }
               codesign --verify --strict "$path"
@@ -137,20 +180,82 @@ jobs:
             echo "auval ok: $p"
           done
 
-      - name: Uninstall cleanly
+      - name: Uninstall ONGA.pkg removes everything
         run: |
           . ./suite.sh
-          sudo installer -pkg "dist/Uninstall ONGA Sync.pkg" -target /
+          sudo installer -pkg "dist/Uninstall ONGA.pkg" -target /
           for p in "${PLUGINS[@]}"; do
-            for path in "/Library/Audio/Plug-Ins/Components/$p.component" "/Library/Audio/Plug-Ins/VST3/$p.vst3" "/Applications/$p.app"; do
+            load_plugin "$p"
+            for path in "/Library/Audio/Plug-Ins/Components/$BUNDLE.component" "/Library/Audio/Plug-Ins/VST3/$BUNDLE.vst3" "/Applications/$BUNDLE.app"; do
               test ! -e "$path" || { echo "::error::uninstall left $path behind"; exit 1; }
             done
           done
+
+      - name: The app installs, downloads every package, installs them, and sees them current
+        run: |
+          cli=syncapp/OngaSyncCli
+          sudo installer -pkg "dist/Install ONGA Sync.pkg" -target /
+          test -d "/Applications/ONGA Sync.app" || { echo "::error::ONGA Sync.app was not installed"; exit 1; }
+          codesign --verify --strict "/Applications/ONGA Sync.app"
+
+          # The app's downloader + checksum check, against every file in the catalog.
+          "$cli" verify dist/packages/catalog.json
+
+          # Install with the exact script the app runs as root.
+          plugin_pkgs=()
+          for f in dist/packages/*.pkg; do [[ "$(basename "$f")" == ONGA-Sync-* ]] || plugin_pkgs+=("$f"); done
+          "$cli" install-script "${plugin_pkgs[@]}" > install.sh
+          cat install.sh
+          sudo sh install.sh
+          "$cli" check dist/packages/catalog.json --expect-current
+
+      - name: Screenshot the app
+        continue-on-error: true
+        run: |
+          support="$HOME/Library/Application Support/ONGA/Sync"
+          mkdir -p "$support"
+          printf '{"catalogUrl": "%s"}' "$PWD/dist/packages/catalog.json" > "$support/settings.json"
+          printf '{"userId":"developer","email":"dev@ongatools.local","displayName":"Developer","provider":"developer","licenses":[{"product":"*","kind":"developer","expires":0}]}' > "$support/account.json"
+          # macOS has no timeout(1): run in the background, wait for the PNG, then stop it.
+          shoot() {
+            ONGA_SYNC_SNAPSHOT="$1" "/Applications/ONGA Sync.app/Contents/MacOS/ONGA Sync" &
+            local pid=$! i
+            for i in $(seq 60); do [[ -s "$1" ]] && break; sleep 1; done
+            sleep 1; kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+          }
+          mkdir -p shots
+          shoot "$PWD/shots/onga-sync-library.png"
+          rm "$support/account.json"
+          shoot "$PWD/shots/onga-sync-sign-in.png"
+          ls -la shots
+
+      - name: The app's uninstall script removes each plug-in
+        run: |
+          . ./suite.sh
+          cli=syncapp/OngaSyncCli
+          for p in "${PLUGINS[@]}"; do
+            load_plugin "$p"
+            "$cli" uninstall-script dist/packages/catalog.json "$p" > "uninstall-$p.sh"
+            sudo sh "uninstall-$p.sh"
+            for path in "/Library/Audio/Plug-Ins/Components/$BUNDLE.component" "/Library/Audio/Plug-Ins/VST3/$BUNDLE.vst3" "/Applications/$BUNDLE.app"; do
+              test ! -e "$path" || { echo "::error::app uninstall left $path behind"; exit 1; }
+            done
+            echo "uninstalled: $p"
+          done
+          sudo installer -pkg "dist/Uninstall ONGA.pkg" -target /
+          test ! -e "/Applications/ONGA Sync.app" || { echo "::error::Uninstall ONGA.pkg left ONGA Sync.app behind"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         with:
           name: ONGA-Sync-${{ needs.plan.outputs.version }}
           path: dist/*
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: shots/*.png
+          if-no-files-found: warn
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -159,12 +264,11 @@ jobs:
           VERSION: ${{ needs.plan.outputs.version }}
         run: |
           [[ "$GITHUB_REF_NAME" == "v$VERSION" ]] || { echo "::error::tag $GITHUB_REF_NAME does not match SUITE_VERSION $VERSION in suite.sh"; exit 1; }
-          notes="ONGA Sync $VERSION: every ONGA plug-in in one installer (Apple Silicon + Intel, macOS 11+)."$'\n\n'
-          for d in bundles/*/; do p=$(basename "$d"); notes+="- $p $(cat "$d/VERSION")"$'\n'; done
-          notes+=$'\n'"Open the DMG and double-click Install ONGA Sync.pkg. Until the installer is notarised, right-click it and choose Open the first time."
-          cp "dist/Install ONGA Sync.pkg" "dist/ONGA-Sync-$VERSION.pkg"
-          gh release create "$GITHUB_REF_NAME" "dist/ONGA-Sync-$VERSION.dmg" "dist/ONGA-Sync-$VERSION.pkg" \
-            --title "ONGA Sync $VERSION" --notes "$notes" --target "$GITHUB_SHA"
+          ./scripts/release_notes.sh "ONGA Sync library $VERSION" > notes.md
+          cp "dist/Install ONGA Suite.pkg" "dist/ONGA-Suite-$VERSION.pkg"
+          gh release create "$GITHUB_REF_NAME" dist/ONGA-Sync-*.dmg "dist/ONGA-Suite-$VERSION.pkg" \
+            dist/packages/* \
+            --title "ONGA Sync $VERSION" --notes-file notes.md --target "$GITHUB_SHA"
 
       - name: Publish test pre-release
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_release }}
@@ -173,9 +277,10 @@ jobs:
           VERSION: ${{ needs.plan.outputs.version }}
         run: |
           tag="test-${GITHUB_RUN_NUMBER}"
-          notes="Test build of ONGA Sync $VERSION from ${{ inputs.ref_override || 'the pinned tags' }}. Not a release."$'\n\n'
-          for d in bundles/*/; do p=$(basename "$d"); notes+="- $p $(cat "$d/VERSION")"$'\n'; done
-          notes+=$'\n'"Open the DMG and double-click Install ONGA Sync.pkg. It is unsigned: right-click it and choose Open the first time."
-          gh release create "$tag" "dist/ONGA-Sync-$VERSION.dmg" \
-            --title "ONGA Sync $VERSION (test build $GITHUB_RUN_NUMBER)" --notes "$notes" \
+          ./scripts/release_notes.sh "Test build of ONGA Sync $VERSION from ${{ inputs.ref_override || 'the pinned refs' }}. Not a release." > notes.md
+          echo "Point ONGA Sync at it: SOURCE... -> https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/catalog.json" >> notes.md
+          cp "dist/Install ONGA Suite.pkg" "dist/ONGA-Suite-$VERSION.pkg"
+          gh release create "$tag" dist/ONGA-Sync-*.dmg "dist/ONGA-Suite-$VERSION.pkg" \
+            dist/packages/* \
+            --title "ONGA Sync $VERSION (test build $GITHUB_RUN_NUMBER)" --notes-file notes.md \
             --prerelease --target "$GITHUB_SHA"

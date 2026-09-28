@@ -4,7 +4,7 @@
 #
 #   scripts/build_plugin.sh <plugin> <source-dir> <out-dir>
 #
-# Leaves <out-dir>/<plugin>/ holding <plugin>.component, <plugin>.vst3, <plugin>.app (when
+# Leaves <out-dir>/<plugin>/ holding <BUNDLE>.component, <BUNDLE>.vst3, <BUNDLE>.app (when
 # the plug-in has one) and VERSION (read from the plug-in's CMake project()).
 set -euo pipefail
 
@@ -32,8 +32,8 @@ art="$build/${TARGET}_artefacts/Release"
 dest="$out/$name"
 rm -rf "$dest"; mkdir -p "$dest"
 
-bundles=("AU/$name.component" "VST3/$name.vst3")
-[[ "$APP" == 1 ]] && bundles+=("Standalone/$name.app")
+bundles=("AU/$BUNDLE.component" "VST3/$BUNDLE.vst3")
+[[ "$APP" == 1 ]] && bundles+=("Standalone/$BUNDLE.app")
 
 for b in "${bundles[@]}"; do
     if [[ ! -d "$art/$b" ]]; then
@@ -47,7 +47,7 @@ done
 # Every binary must carry both slices, or half the Macs out there can't load it.
 for b in "$dest"/*.component "$dest"/*.vst3 "$dest"/*.app; do
     [[ -e "$b" ]] || continue
-    exe="$b/Contents/MacOS/$name"
+    exe="$b/Contents/MacOS/$BUNDLE"
     archs="$(lipo -archs "$exe")"
     [[ "$archs" == *arm64* && "$archs" == *x86_64* ]] || { echo "error: $exe is '$archs', not universal" >&2; exit 1; }
 done

@@ -2,25 +2,29 @@
 #
 # To ship a new suite: tag each plug-in repo, bump that plug-in's TAG here, bump
 # SUITE_VERSION, then push a tag "v$SUITE_VERSION" to this repo. CI builds every plug-in
-# from its pinned tag, assembles the installer and publishes a GitHub Release.
+# from its pinned tag, packages each one for the ONGA Sync app, writes catalog.json and
+# publishes a GitHub Release. The app picks the new catalog up on its next check.
 
 SUITE_NAME="ONGA Sync"
 SUITE_VERSION="2026.1"
 SUITE_ID="com.ongatools.sync"
 
-# Order here is the order of the checkboxes in the installer.
-PLUGINS=(bloom transformer voxmaster mageq panna)
+# Order here is the order of the library in the app and of the offline installer's checkboxes.
+PLUGINS=(bloom transformer voxmaster mageq panna wizard)
 
 # Each plugin_<name> sets:
-#   REPO, TAG      where to build from (a pinned tag, never a branch)
+#   REPO, TAG      where to build from (a pinned tag or commit, never a branch)
 #   TARGET         the juce_add_plugin target (artefacts land in <TARGET>_artefacts)
+#   BUNDLE         bundle file name without extension (defaults to <name>)
+#   TYPE           effect | instrument
 #   APP            1 if it ships a standalone app
 #   CMAKE_ARGS     extra configure flags (switch off tests and dev tools)
 #   AUVAL          type subtype manufacturer, for validation in CI
 #   BLURB          one line for the installer's checkbox
 #   OLD_NAMES      earlier bundle names; preinstall moves these to the Trash
 #   OLD_RECEIPTS   earlier installer receipts; preinstall forgets them
-# Bundle names are the plug-in name itself (bloom.component, bloom.vst3, bloom.app).
+# Bundle names are the plug-in name itself (bloom.component, bloom.vst3, bloom.app) unless
+# BUNDLE says otherwise.
 # The plug-in codes never change, so sessions saved with an old name still open.
 
 plugin_bloom() {
@@ -70,9 +74,21 @@ plugin_panna() {
     OLD_RECEIPTS=(com.onga.pannavisio.install com.onga.pannavisio.uninstall)
 }
 
+# TheWiz has no release tags yet, so it is pinned to a commit (its 1.1.6).
+plugin_wizard() {
+    REPO=benettriley/TheWiz; TAG=1d7e3fcb57b5f138a33538e418425dc8f9f90019; TARGET=TheWizard; APP=1
+    BUNDLE="The Wizard"; TYPE=instrument
+    CMAKE_ARGS=(-DWIZARD_BUILD_TESTS=OFF -DWIZARD_BUILD_PROBE=OFF -DWIZARD_COPY_AFTER_BUILD=OFF)
+    AUVAL=(aumu OWz5 Onga)
+    BLURB="Five-voice analog polysynth with an arpeggiator, a four-slot effect station and 178 patches."
+    OLD_NAMES=()
+    OLD_RECEIPTS=(com.ongatools.thewizard.au com.ongatools.thewizard.vst3 com.ongatools.thewizard.app)
+}
+
 # Clears the per-plugin variables, then loads one plug-in's.
 load_plugin() {
-    REPO= TAG= TARGET= APP=0 CMAKE_ARGS=() AUVAL=() BLURB= OLD_NAMES=() OLD_RECEIPTS=()
+    REPO= TAG= TARGET= BUNDLE= TYPE=effect APP=0 CMAKE_ARGS=() AUVAL=() BLURB= OLD_NAMES=() OLD_RECEIPTS=()
     declare -F "plugin_$1" >/dev/null || { echo "error: unknown plug-in '$1' (see suite.sh)" >&2; return 1; }
     "plugin_$1"
+    BUNDLE="${BUNDLE:-$1}"
 }
