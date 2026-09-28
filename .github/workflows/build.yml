@@ -204,9 +204,10 @@ jobs:
           # Install with the exact script the app runs as root.
           plugin_pkgs=()
           for f in dist/packages/*.pkg; do [[ "$(basename "$f")" == ONGA-Sync-* ]] || plugin_pkgs+=("$f"); done
-          "$cli" install-script "${plugin_pkgs[@]}" > install.sh
-          cat install.sh
-          sudo sh install.sh
+          # The same file the app hands to the password prompt, written by the same code.
+          script="$("$cli" install-script "${plugin_pkgs[@]}")"
+          cat "$script"
+          sudo /bin/sh "$script"
           "$cli" check dist/packages/catalog.json --expect-current
 
       - name: Screenshot the app
@@ -235,8 +236,8 @@ jobs:
           cli=syncapp/OngaSyncCli
           for p in "${PLUGINS[@]}"; do
             load_plugin "$p"
-            "$cli" uninstall-script dist/packages/catalog.json "$p" > "uninstall-$p.sh"
-            sudo sh "uninstall-$p.sh"
+            script="$("$cli" uninstall-script dist/packages/catalog.json "$p")"
+            sudo /bin/sh "$script"
             for path in "/Library/Audio/Plug-Ins/Components/$BUNDLE.component" "/Library/Audio/Plug-Ins/VST3/$BUNDLE.vst3" "/Applications/$BUNDLE.app"; do
               test ! -e "$path" || { echo "::error::app uninstall left $path behind"; exit 1; }
             done

@@ -25,6 +25,9 @@ juce::String installScript (const juce::Array<juce::File>& pkgs);
     deleted outright: a mistake can be undone from the Trash. */
 juce::String uninstallScript (const Package& p, const UserContext& user, const juce::String& stamp);
 
+/** Writes a script to a new temporary file with Unix line endings (sh rejects "\r"). */
+juce::File writeScript (const juce::String& script);
+
 /** Single-quotes a value for sh. */
 juce::String shellQuote (const juce::String& s);
 
