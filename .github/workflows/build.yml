@@ -266,9 +266,16 @@ jobs:
           [[ "$GITHUB_REF_NAME" == "v$VERSION" ]] || { echo "::error::tag $GITHUB_REF_NAME does not match SUITE_VERSION $VERSION in suite.sh"; exit 1; }
           ./scripts/release_notes.sh "ONGA Sync library $VERSION" > notes.md
           cp "dist/Install ONGA Suite.pkg" "dist/ONGA-Suite-$VERSION.pkg"
-          gh release create "$GITHUB_REF_NAME" dist/ONGA-Sync-*.dmg "dist/ONGA-Suite-$VERSION.pkg" \
-            dist/packages/* \
-            --title "ONGA Sync $VERSION" --notes-file notes.md --target "$GITHUB_SHA"
+          files=(dist/ONGA-Sync-*.dmg "dist/ONGA-Suite-$VERSION.pkg" dist/packages/*)
+          # The release may already exist (published from the web to create the tag):
+          # then fill it in instead of creating it.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --title "ONGA Sync $VERSION" --notes-file notes.md
+            gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "${files[@]}" \
+              --title "ONGA Sync $VERSION" --notes-file notes.md --target "$GITHUB_SHA"
+          fi
 
       - name: Publish test pre-release
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.test_release }}
